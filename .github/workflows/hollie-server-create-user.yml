@@ -1,0 +1,108 @@
+---
+name: Hollie matrix server user create
+on:
+  workflow_dispatch:
+    inputs:
+      username:
+        description: User to create
+        type: string
+        required: true
+        default: ""
+      password:
+        type: string
+        description: Password for GPG archive
+        required: true
+        default: ""
+      admin:
+        type: boolean
+        description: Admin
+        default: false
+env:
+  ANSIBLE_FORCE_COLOR: True
+jobs:
+  deploy:
+    name: Deploy matrix server
+    if: github.repository == 'assumptionsandg/hollie-matrix-docker-ansible-deploy'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: hollie
+          path: src/matrix-docker-ansible-deploy
+      
+      - name: Setup SSH key
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 10 -p 42069 -H matrix.assumptions.network >> ~/.ssh/known_hosts
+
+      - name: Wrtie vault password
+        run: |
+          install -m 600 /dev/null ~/vault-pw
+          printf '%s\n' "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > ~/vault-pw
+
+      - name: Install Ansible
+        run: |
+          mkdir -p venvs &&
+          pushd venvs &&
+          python3 -m venv ansible &&
+          source ansible/bin/activate &&
+          pip install -U pip ansible
+
+      - name: Install Ansible roles
+        run: |
+          source venvs/ansible/bin/activate
+          cd src/matrix-docker-ansible-deploy
+          rm -rf roles/galaxy
+          ansible-galaxy install -r requirements.yml -p roles/galaxy/ --force
+          ls -la roles/galaxy
+
+      - name: Generate Matrix user password
+        id: matrix_password
+        run: |
+          PASSWORD="$(openssl rand -base64 32)"
+          echo "::add-mask::$PASSWORD"
+          echo "MATRIX_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Create Matrix server user
+        env:
+          MATRIX_USERNAME: ${{ inputs.username }}
+          MATRIX_ADMIN: ${{ inputs.admin && 'yes' || 'no' }}
+        run: |
+          source venvs/ansible/bin/activate &&
+          pushd src/matrix-docker-ansible-deploy &&
+          ansible-playbook -i inventory/hosts setup.yml \
+          --extra-vars "username=$MATRIX_USERNAME" \
+          --extra-vars "password=$MATRIX_PASSWORD" \
+          --extra-vars "admin=$MATRIX_ADMIN" \
+          --tags=register-user \
+          --vault-password-file ~/vault-pw
+
+      - name: Mask artifact password
+        run: |
+          echo "::add-mask::${{ inputs.password }}"
+
+      - name: Create encrypted password artifact
+        run: |
+          cat > matrix-user.txt <<EOF
+          username: ${{ inputs.username }}
+          password: $MATRIX_PASSWORD
+          admin: ${{ inputs.admin }}
+          EOF
+
+          gpg --pinentry-mode=loopback --batch \
+            --passphrase "${{ inputs.password }}" \
+            -c matrix-user.txt
+
+          shred -u matrix-user.txt
+
+      - name: Upload encrypted password
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-user-password
+          path: matrix-user.txt.gpg
+          retention-days: 1
