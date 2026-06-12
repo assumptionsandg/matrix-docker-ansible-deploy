@@ -1,0 +1,51 @@
+---
+name: Deploy Hollie matrix server
+on:
+  push:
+    branches:
+      - hollie
+env:
+  ANSIBLE_FORCE_COLOR: True
+  ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+jobs:
+  deploy:
+    name: Deploy matrix server
+    if: github.repository == 'assumptionsandg/hollie-matrix-docker-ansible-deploy'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: hollie
+          path: src/matrix-docker-ansible-deploy
+      
+      - name: Setup SSH key
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 10 -p 42069 -H matrix.assumptions.network >> ~/.ssh/known_hosts
+
+      - name: Install Ansible
+        run: |
+          mkdir -p venvs &&
+          pushd venvs &&
+          python3 -m venv ansible &&
+          source ansible/bin/activate &&
+          pip install -U pip ansible
+
+      - name: Install Ansible roles
+        run: |
+          source venvs/ansible/bin/activate
+          cd src/matrix-docker-ansible-deploy
+          rm -rf roles/galaxy
+          ansible-galaxy install -r requirements.yml -p roles/galaxy/ --force
+          ls -la roles/galaxy
+
+      - name: Deploy Matrix sevrer
+        run: |
+          source venvs/ansible/bin/activate &&
+          pushd src/matrix-docker-ansible-deploy &&
+          ansible-playbook -i inventory/hosts setup.yml --tags=setup-all,ensure-matrix-users-created,start
