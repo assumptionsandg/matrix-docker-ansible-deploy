@@ -6,7 +6,6 @@ on:
       - hollie
 env:
   ANSIBLE_FORCE_COLOR: True
-  ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
 jobs:
   deploy:
     name: Deploy matrix server
@@ -28,6 +27,11 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -T 10 -p 42069 -H matrix.assumptions.network >> ~/.ssh/known_hosts
 
+      - name: Wrtie vault password
+        run: |
+          install -m 600 /dev/null ~/vault-pw
+          printf '%s\n' "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > ~/vault-pw
+
       - name: Install Ansible
         run: |
           mkdir -p venvs &&
@@ -44,8 +48,11 @@ jobs:
           ansible-galaxy install -r requirements.yml -p roles/galaxy/ --force
           ls -la roles/galaxy
 
-      - name: Deploy Matrix sevrer
+      - name: Deploy Matrix server
         run: |
           source venvs/ansible/bin/activate &&
           pushd src/matrix-docker-ansible-deploy &&
-          ansible-playbook -i inventory/hosts setup.yml --tags=setup-all,ensure-matrix-users-created,start
+          ansible-playbook -i inventory/hosts setup.yml \
+          --tags=setup-all,ensure-matrix-users-created,start \
+          --vault-password-file ~/vault-pw
+
