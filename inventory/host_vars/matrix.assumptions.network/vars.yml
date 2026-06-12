@@ -91,3 +91,5 @@ matrix_static_files_container_labels_base_domain_enabled: true
 
 matrix_element_admin_enabled: true
 matrix_element_call_enabled: true
+
+matrix_playbook_migration_validated_version: v2026.05.18.0
