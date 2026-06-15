@@ -4,6 +4,8 @@
 .idea/
 .direnv/
 /var/
+vault-pw
+become-pw
 
 # ignore roles pulled by ansible-galaxy
 /roles/galaxy/*
