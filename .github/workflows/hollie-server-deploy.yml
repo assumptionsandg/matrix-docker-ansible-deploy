@@ -1,9 +1,7 @@
 ---
 name: Deploy Hollie matrix server
 on:
-  push:
-    branches:
-      - hollie
+  workflow_dispatch:
 env:
   ANSIBLE_FORCE_COLOR: True
 jobs:
