@@ -1,2 +1,0 @@
-[matrix_servers]
-hollie.internal ansible_port=42069
